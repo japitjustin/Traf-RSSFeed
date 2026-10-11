@@ -23,6 +23,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_FEED_URLS: ${{ secrets.ALERT_FEED_URLS }}
 
       - name: Commit seen list
         run: |

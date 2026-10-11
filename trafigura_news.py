@@ -2,6 +2,7 @@
 
 Standard library only. State lives in seen.json (committed back by the workflow).
 Env vars required: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+Optional: ALERT_FEED_URLS (Google Alerts RSS URLs, separated by commas or whitespace)
 """
 import html
 import json
@@ -49,7 +50,7 @@ def http(url, data=None):
         return resp.read()
 
 
-def fetch_items():
+def fetch_news_items():
     root = ET.fromstring(http(feed_url()))
     items = []
     for it in root.iter("item"):
@@ -60,6 +61,50 @@ def fetch_items():
         source = src.text.strip() if src is not None and src.text else ""
         if title and link:
             items.append({"title": title, "link": link, "guid": guid, "source": source})
+    return items
+
+
+ATOM = "{http://www.w3.org/2005/Atom}"
+
+
+def unwrap_alert_link(href):
+    """Google Alerts wraps links as google.com/url?...&url=<real>; return the real URL."""
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+    return qs["url"][0] if qs.get("url") else href
+
+
+def fetch_alert_items(feed):
+    root = ET.fromstring(http(feed))
+    items = []
+    for entry in root.iter(ATOM + "entry"):
+        raw_title = entry.findtext(ATOM + "title") or ""
+        title = html.unescape(re.sub(r"<[^>]+>", "", raw_title)).strip()
+        link_el = entry.find(ATOM + "link")
+        href = link_el.get("href", "") if link_el is not None else ""
+        link = unwrap_alert_link(html.unescape(href))
+        guid = (entry.findtext(ATOM + "id") or link).strip()
+        source = urllib.parse.urlparse(link).netloc.removeprefix("www.")
+        if title and link:
+            items.append({"title": title, "link": link, "guid": guid, "source": source})
+    return items
+
+
+def fetch_items():
+    """Google News search plus any Google Alerts feeds in ALERT_FEED_URLS (secret)."""
+    items, failures, attempts = [], 0, 0
+    jobs = [("news", fetch_news_items)]
+    for feed in re.split(r"[\s,]+", os.environ.get("ALERT_FEED_URLS", "").strip()):
+        if feed:
+            jobs.append(("alert", lambda f=feed: fetch_alert_items(f)))
+    for name, fn in jobs:
+        attempts += 1
+        try:
+            items += fn()
+        except Exception as exc:  # one bad feed must not block the others
+            failures += 1
+            print(f"{name} feed failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+    if failures == attempts:
+        sys.exit("All feeds failed")
     return items
 
 
