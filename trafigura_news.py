@@ -27,6 +27,7 @@ SITES = [
     "shipandbunker.com",
     "splash247.com",
     "lloydslist.com",
+    "trafigura.com",
 ]
 SEEN_FILE = Path("seen.json")
 MAX_SEEN = 600   # keys kept (two per article)
