@@ -93,14 +93,17 @@ def fetch_alert_items(feed):
 def fetch_items():
     """Google News search plus any Google Alerts feeds in ALERT_FEED_URLS (secret)."""
     items, failures, attempts = [], 0, 0
-    jobs = [("news", fetch_news_items)]
-    for feed in re.split(r"[\s,]+", os.environ.get("ALERT_FEED_URLS", "").strip()):
-        if feed:
-            jobs.append(("alert", lambda f=feed: fetch_alert_items(f)))
+    jobs = [("News", fetch_news_items)]
+    feeds = [f for f in re.split(r"[\s,]+", os.environ.get("ALERT_FEED_URLS", "").strip()) if f]
+    for n, feed in enumerate(feeds, 1):
+        jobs.append((f"Alert {n}", lambda f=feed: fetch_alert_items(f)))
     for name, fn in jobs:
         attempts += 1
         try:
-            items += fn()
+            found = fn()
+            for it in found:
+                it["tag"] = name
+            items += found
         except Exception as exc:  # one bad feed must not block the others
             failures += 1
             print(f"{name} feed failed: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -166,7 +169,7 @@ def main():
     for it, keys in pending[:MAX_SEND]:
         label = f" ({it['source']})" if it["source"] else ""
         link = html.escape(it["link"], quote=True)
-        text = f'<a href="{link}">{html.escape(it["title"])}</a>'
+        text = f'[{it["tag"]}] <a href="{link}">{html.escape(it["title"])}</a>'
         if label:
             text += html.escape(label) if label not in it["title"] else ""
         try:
