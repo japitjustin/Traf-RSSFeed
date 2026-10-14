@@ -29,6 +29,19 @@ SITES = [
     "lloydslist.com",
     "trafigura.com",
 ]
+NEWS_FEED_ENABLED = False  # Google News search; the [News] feed is skipped when False
+# Alert results from these domains (or their subdomains) are dropped as paywalled.
+PAYWALLED = [
+    "ft.com",
+    "bloomberg.com",
+    "wsj.com",
+    "lloydslist.com",
+    "argusmedia.com",
+    "spglobal.com",
+    "fastmarkets.com",
+    "economist.com",
+    "thetimes.co.uk",
+]
 SEEN_FILE = Path("seen.json")
 MAX_SEEN = 600   # keys kept (two per article)
 MAX_SEND = 10    # cap per run so a backlog cannot flood the chat
@@ -74,6 +87,11 @@ def unwrap_alert_link(href):
     return qs["url"][0] if qs.get("url") else href
 
 
+def is_paywalled(link):
+    host = urllib.parse.urlparse(link).netloc.lower().split(":")[0]
+    return any(host == d or host.endswith("." + d) for d in PAYWALLED)
+
+
 def fetch_alert_items(feed):
     root = ET.fromstring(http(feed))
     items = []
@@ -85,7 +103,7 @@ def fetch_alert_items(feed):
         link = unwrap_alert_link(html.unescape(href))
         guid = (entry.findtext(ATOM + "id") or link).strip()
         source = urllib.parse.urlparse(link).netloc.removeprefix("www.")
-        if title and link:
+        if title and link and not is_paywalled(link):
             items.append({"title": title, "link": link, "guid": guid, "source": source})
     return items
 
@@ -93,7 +111,7 @@ def fetch_alert_items(feed):
 def fetch_items():
     """Google News search plus any Google Alerts feeds in ALERT_FEED_URLS (secret)."""
     items, failures, attempts = [], 0, 0
-    jobs = [("News", fetch_news_items)]
+    jobs = [("News", fetch_news_items)] if NEWS_FEED_ENABLED else []
     feeds = [f for f in re.split(r"[\s,]+", os.environ.get("ALERT_FEED_URLS", "").strip()) if f]
     for n, feed in enumerate(feeds, 1):
         jobs.append((f"Alert {n}", lambda f=feed: fetch_alert_items(f)))
@@ -107,6 +125,8 @@ def fetch_items():
         except Exception as exc:  # one bad feed must not block the others
             failures += 1
             print(f"{name} feed failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+    if not attempts:
+        sys.exit("No feeds enabled: set ALERT_FEED_URLS or NEWS_FEED_ENABLED")
     if failures == attempts:
         sys.exit("All feeds failed")
     return items

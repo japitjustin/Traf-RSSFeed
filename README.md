@@ -4,8 +4,8 @@ Sends new news headlines about Trafigura to a Telegram chat. It runs on GitHub A
 
 ## How it works
 
-1. `trafigura_news.py` queries the Google News RSS search for `"Trafigura"` or `"TFG Marine"` on a fixed list of sites, limited to the last 2 days.
-2. Optionally, it also reads any Google Alerts feeds you supply.
+1. `trafigura_news.py` reads the Google Alerts feeds you supply in `ALERT_FEED_URLS`. Results from paywalled domains (see `PAYWALLED`) are dropped.
+2. Optionally, it also queries the Google News RSS search for `"Trafigura"` or `"TFG Marine"` on a fixed list of sites, limited to the last 2 days. This is switched off by default (`NEWS_FEED_ENABLED = False`).
 3. Items not seen before are sent to Telegram as a linked headline, oldest first, up to 10 per run. Each message starts with a prefix showing which feed found it: `[News]` for the Google News search, `[Alert 1]`, `[Alert 2]` and so on for the Google Alerts feeds, numbered in the order the URLs appear in `ALERT_FEED_URLS`.
 4. Seen items are recorded in `seen.json`, which the workflow commits back to the repo.
 
@@ -13,9 +13,9 @@ On the first run (no `seen.json`) the script records the current items without s
 
 Syndicated copies of one story are collapsed by normalised headline, so the same headline from several outlets is sent once. When both Google News and an alert feed return the same story, the alert prefix is the one that appears.
 
-## Sites scanned
+## Sites scanned by the Google News search
 
-Edit `SITES` in `trafigura_news.py` to change them.
+Only used when `NEWS_FEED_ENABLED` is `True`. Edit `SITES` in `trafigura_news.py` to change them.
 
 - reuters.com
 - ft.com
@@ -40,7 +40,7 @@ Coverage depends on what Google News has indexed for each site.
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | Bot token |
 | `TELEGRAM_CHAT_ID` | Yes | Destination chat |
-| `ALERT_FEED_URLS` | No | Google Alerts RSS URLs, separated by commas or whitespace |
+| `ALERT_FEED_URLS` | Yes, while the News feed is off | Google Alerts RSS URLs, separated by commas or whitespace |
 
 3. Enable Actions. The workflow in `.github/workflows/trafigura-news.yml` runs on a 30-minute schedule and can also be started manually with "Run workflow".
 
@@ -58,6 +58,8 @@ This reads and updates `seen.json` in the current directory.
 
 Constants at the top of `trafigura_news.py`:
 
+- `NEWS_FEED_ENABLED`: turns the Google News search on or off (off).
+- `PAYWALLED`: domains whose alert results are dropped, including subdomains. Google Alerts does not say whether an article is paywalled, so this is a fixed list. Add or remove domains as needed.
 - `KEYWORDS`: search terms.
 - `SITES`: domains to search.
 - `MAX_SEND`: maximum messages per run (10).
@@ -68,5 +70,5 @@ The 2-day window is the `when:2d` term in `feed_url()`.
 ## Behaviour to know
 
 - If a Telegram send fails, the script stops for that run and retries the remaining items next run.
-- If every feed fails, the run exits with an error. A single failing feed is logged and skipped.
+- If no feed is enabled, or every feed fails, the run exits with an error. A single failing feed is logged and skipped.
 - The workflow pushes a commit to `main` whenever `seen.json` changes, so expect frequent "Update seen items" commits.
