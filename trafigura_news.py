@@ -30,6 +30,8 @@ SITES = [
     "trafigura.com",
 ]
 NEWS_FEED_ENABLED = False  # Google News search; the [News] feed is skipped when False
+PRESS_FEED_ENABLED = True  # Trafigura's own press release page
+PRESS_URL = "https://www.trafigura.com/news-and-insights/press-releases/"
 SEEN_FILE = Path("seen.json")
 MAX_SEEN = 600   # keys kept (two per article)
 MAX_SEND = 10    # cap per run so a backlog cannot flood the chat
@@ -91,25 +93,52 @@ def fetch_alert_items(feed):
     return items
 
 
+PRESS_LINK = re.compile(
+    r'<a\b[^>]*?href="([^"#?]*/press-releases/\d{4}/([a-z0-9-]+)/?)"[^>]*>(.*?)</a>',
+    re.S | re.I,
+)
+
+
+def fetch_press_items():
+    """Scrape press release links from trafigura.com (no RSS feed is known)."""
+    page = http(PRESS_URL).decode("utf-8", "replace")
+    found = {}
+    for href, slug, inner in PRESS_LINK.findall(page):
+        link = urllib.parse.urljoin(PRESS_URL, href)
+        text = html.unescape(re.sub(r"<[^>]+>", " ", inner))
+        text = re.sub(r"\s+", " ", text).strip()
+        if len(text) < 20:  # "Read more", a date, etc.: fall back to the URL slug
+            text = slug.replace("-", " ").capitalize()
+        if link not in found or len(text) > len(found[link]):
+            found[link] = text
+    if not found:
+        raise RuntimeError("no press release links found (page layout changed?)")
+    return [
+        {"title": t, "link": l, "guid": "tf:" + l, "source": "trafigura.com"}
+        for l, t in found.items()
+    ]
+
+
 def fetch_items():
-    """Google News search plus any Google Alerts feeds in ALERT_FEED_URLS (secret)."""
+    """Trafigura press page, Google Alerts feeds in ALERT_FEED_URLS (secret), optional Google News."""
     items, failures, attempts = [], 0, 0
-    jobs = [("News", fetch_news_items)] if NEWS_FEED_ENABLED else []
+    jobs = []
+    if PRESS_FEED_ENABLED:
+        jobs.append(("Press", fetch_press_items))
+    if NEWS_FEED_ENABLED:
+        jobs.append(("News", fetch_news_items))
     feeds = [f for f in re.split(r"[\s,]+", os.environ.get("ALERT_FEED_URLS", "").strip()) if f]
     for n, feed in enumerate(feeds, 1):
         jobs.append((f"Alert {n}", lambda f=feed: fetch_alert_items(f)))
     for name, fn in jobs:
         attempts += 1
         try:
-            found = fn()
-            for it in found:
-                it["tag"] = name
-            items += found
+            items += fn()
         except Exception as exc:  # one bad feed must not block the others
             failures += 1
             print(f"{name} feed failed: {type(exc).__name__}: {exc}", file=sys.stderr)
     if not attempts:
-        sys.exit("No feeds enabled: set ALERT_FEED_URLS or NEWS_FEED_ENABLED")
+        sys.exit("No feeds enabled")
     if failures == attempts:
         sys.exit("All feeds failed")
     return items
@@ -156,6 +185,13 @@ def main():
         print(f"Seeded {len(items)} items")
         return
 
+    # First time the press page is seen: record its existing releases without sending.
+    if not any(k.startswith("tf:") for k in seen_set):
+        old = [it for it in items if it["guid"].startswith("tf:")]
+        for it in old:
+            remember([it["guid"], headline_key(it["title"], it["source"])])
+        items = [it for it in items if it not in old]
+
     pending = []
     batch = set()
     for it in reversed(items):  # feed is newest first; send oldest first
@@ -172,7 +208,7 @@ def main():
     for it, keys in pending[:MAX_SEND]:
         label = f" ({it['source']})" if it["source"] else ""
         link = html.escape(it["link"], quote=True)
-        text = f'[{it["tag"]}] <a href="{link}">{html.escape(it["title"])}</a>'
+        text = f'<a href="{link}">{html.escape(it["title"])}</a>'
         if label:
             text += html.escape(label) if label not in it["title"] else ""
         try:
