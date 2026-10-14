@@ -15,7 +15,16 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-KEYWORDS = ["Trafigura", "TFG Marine"]
+KEYWORDS = [
+    "Trafigura",
+    "Trafigura Group",
+    "TFG Marine",
+    "Impala Terminals",
+    "Nyrstar",
+    "Puma Energy",
+    "Volare Shipping",
+]
+LEGAL_TERMS = ["lawsuit", "sanctions", "fine", "penalty", "investigation", "court"]
 SITES = [
     "reuters.com",
     "ft.com",
@@ -39,7 +48,8 @@ MAX_SEND = 10    # cap per run so a backlog cannot flood the chat
 
 def feed_url():
     sites = " OR ".join(f"site:{s}" for s in SITES)
-    terms = " OR ".join(f'"{k}"' for k in KEYWORDS)
+    legal = " OR ".join(LEGAL_TERMS)
+    terms = " OR ".join(f'"{k}"' for k in KEYWORDS) + f" OR (Trafigura ({legal}))"
     params = urllib.parse.urlencode(
         {"q": f"({terms}) ({sites}) when:2d", "hl": "en-SG", "gl": "SG", "ceid": "SG:en"}
     )

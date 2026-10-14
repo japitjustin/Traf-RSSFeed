@@ -23,7 +23,7 @@ This is a scrape, so it breaks if the site changes its layout or loads the list 
 
 Each alert needs its own RSS feed URL, added to `ALERT_FEED_URLS`. In Google Alerts, set "Deliver to" to RSS feed, "How many" to All results, and "Sources" to Automatic.
 
-- Entities: `"Trafigura"`, `"Trafigura Group"`, `"TFG Marine"`, `"Impala Terminals"`, `"Nyrstar"`, `"Puma Energy"`
+- Entities: `"Trafigura"`, `"Trafigura Group"`, `"TFG Marine"`, `"Impala Terminals"`, `"Nyrstar"`, `"Puma Energy"`, `"Volare Shipping"`
 - Legal and regulatory: `Trafigura lawsuit`, `Trafigura sanctions`, `Trafigura fine OR penalty OR investigation`, `Trafigura court`
 - People: the names of senior executives you want to follow
 
@@ -75,6 +75,7 @@ Constants at the top of `trafigura_news.py`:
 - `PRESS_FEED_ENABLED`: turns the trafigura.com press release scrape on or off (on).
 - `NEWS_FEED_ENABLED`: turns the Google News search on or off (off).
 - `PRESS_URL`: the press release list page.
+- `KEYWORDS` and `LEGAL_TERMS`: the terms in the Google News search. They have no effect while `NEWS_FEED_ENABLED` is `False`, and the alert feeds are not filtered by them.
 - `KEYWORDS`: search terms.
 - `SITES`: domains to search.
 - `MAX_SEND`: maximum messages per run (10).
