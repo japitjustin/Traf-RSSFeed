@@ -30,18 +30,6 @@ SITES = [
     "trafigura.com",
 ]
 NEWS_FEED_ENABLED = False  # Google News search; the [News] feed is skipped when False
-# Alert results from these domains (or their subdomains) are dropped as paywalled.
-PAYWALLED = [
-    "ft.com",
-    "bloomberg.com",
-    "wsj.com",
-    "lloydslist.com",
-    "argusmedia.com",
-    "spglobal.com",
-    "fastmarkets.com",
-    "economist.com",
-    "thetimes.co.uk",
-]
 SEEN_FILE = Path("seen.json")
 MAX_SEEN = 600   # keys kept (two per article)
 MAX_SEND = 10    # cap per run so a backlog cannot flood the chat
@@ -87,11 +75,6 @@ def unwrap_alert_link(href):
     return qs["url"][0] if qs.get("url") else href
 
 
-def is_paywalled(link):
-    host = urllib.parse.urlparse(link).netloc.lower().split(":")[0]
-    return any(host == d or host.endswith("." + d) for d in PAYWALLED)
-
-
 def fetch_alert_items(feed):
     root = ET.fromstring(http(feed))
     items = []
@@ -103,7 +86,7 @@ def fetch_alert_items(feed):
         link = unwrap_alert_link(html.unescape(href))
         guid = (entry.findtext(ATOM + "id") or link).strip()
         source = urllib.parse.urlparse(link).netloc.removeprefix("www.")
-        if title and link and not is_paywalled(link):
+        if title and link:
             items.append({"title": title, "link": link, "guid": guid, "source": source})
     return items
 

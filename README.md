@@ -4,7 +4,7 @@ Sends new news headlines about Trafigura to a Telegram chat. It runs on GitHub A
 
 ## How it works
 
-1. `trafigura_news.py` reads the Google Alerts feeds you supply in `ALERT_FEED_URLS`. Results from paywalled domains (see `PAYWALLED`) are dropped.
+1. `trafigura_news.py` reads the Google Alerts feeds you supply in `ALERT_FEED_URLS`.
 2. Optionally, it also queries the Google News RSS search for `"Trafigura"` or `"TFG Marine"` on a fixed list of sites, limited to the last 2 days. This is switched off by default (`NEWS_FEED_ENABLED = False`).
 3. Items not seen before are sent to Telegram as a linked headline, oldest first, up to 10 per run. Each message starts with a prefix showing which feed found it: `[News]` for the Google News search, `[Alert 1]`, `[Alert 2]` and so on for the Google Alerts feeds, numbered in the order the URLs appear in `ALERT_FEED_URLS`.
 4. Seen items are recorded in `seen.json`, which the workflow commits back to the repo.
@@ -59,7 +59,6 @@ This reads and updates `seen.json` in the current directory.
 Constants at the top of `trafigura_news.py`:
 
 - `NEWS_FEED_ENABLED`: turns the Google News search on or off (off).
-- `PAYWALLED`: domains whose alert results are dropped, including subdomains. Google Alerts does not say whether an article is paywalled, so this is a fixed list. Add or remove domains as needed.
 - `KEYWORDS`: search terms.
 - `SITES`: domains to search.
 - `MAX_SEND`: maximum messages per run (10).
