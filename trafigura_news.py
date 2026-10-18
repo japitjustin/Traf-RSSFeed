@@ -64,6 +64,12 @@ def http(url, data=None):
         return resp.read()
 
 
+def is_relevant(title):
+    """Google matches the whole page, including "related stories" links, so require a keyword in the headline."""
+    t = title.lower()
+    return any(k.lower() in t for k in KEYWORDS)
+
+
 def fetch_news_items():
     root = ET.fromstring(http(feed_url()))
     items = []
@@ -73,7 +79,7 @@ def fetch_news_items():
         guid = (it.findtext("guid") or link).strip()
         src = it.find("source")
         source = src.text.strip() if src is not None and src.text else ""
-        if title and link:
+        if title and link and is_relevant(title):
             items.append({"title": title, "link": link, "guid": guid, "source": source})
     return items
 
@@ -98,7 +104,7 @@ def fetch_alert_items(feed):
         link = unwrap_alert_link(html.unescape(href))
         guid = (entry.findtext(ATOM + "id") or link).strip()
         source = urllib.parse.urlparse(link).netloc.removeprefix("www.")
-        if title and link:
+        if title and link and is_relevant(title):
             items.append({"title": title, "link": link, "guid": guid, "source": source})
     return items
 

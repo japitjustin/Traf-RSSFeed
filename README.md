@@ -11,6 +11,8 @@ Sends new news headlines about Trafigura to a Telegram chat. It runs on GitHub A
 
 On the first run (no `seen.json`) the script records the current items without sending them, then posts a single "tracker live" message.
 
+Alert and News results are kept only if a `KEYWORDS` term appears in the headline. Google matches the whole page, so without this check an article is returned when a "related stories" or "more from author" link mentions Trafigura. The cost is that a story naming Trafigura only in its body text is dropped. Press releases from trafigura.com are not filtered.
+
 Syndicated copies of one story are collapsed by normalised headline, so the same headline from several outlets is sent once.
 
 ## Trafigura press releases
