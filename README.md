@@ -13,7 +13,7 @@ On the first run (no `seen.json`) the script records the current items without s
 
 Alert and News results are kept only if a `KEYWORDS` term appears in the headline. Google matches the whole page, so without this check an article is returned when a "related stories" or "more from author" link mentions Trafigura. The cost is that a story naming Trafigura only in its body text is dropped. Press releases from trafigura.com are not filtered.
 
-Syndicated copies of one story are collapsed by normalised headline, so the same headline from several outlets is sent once.
+Copies of one story are collapsed by headline: a headline is skipped if it shares at least 60% of its words (`SIMILARITY`) with one already sent or queued, so rewritten headlines on other outlets are caught too. Headlines with fewer than 4 significant words are only matched exactly. Lower `SIMILARITY` to catch more duplicates, at the risk of hiding distinct stories.
 
 ## Trafigura press releases
 

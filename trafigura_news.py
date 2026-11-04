@@ -41,6 +41,8 @@ SITES = [
 NEWS_FEED_ENABLED = False  # Google News search; the [News] feed is skipped when False
 PRESS_FEED_ENABLED = True  # Trafigura's own press release page
 PRESS_URL = "https://www.trafigura.com/news-and-insights/press-releases/"
+SIMILARITY = 0.6  # word overlap (0-1) above which two headlines count as the same story
+STOPWORDS = {"the", "and", "for", "with", "from", "that", "this", "has", "are", "its"}
 SEEN_FILE = Path("seen.json")
 MAX_SEEN = 600   # keys kept (two per article)
 MAX_SEND = 10    # cap per run so a backlog cannot flood the chat
@@ -168,6 +170,20 @@ def headline_key(title, source):
     return "h:" + re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
 
 
+def tokens(key):
+    """Significant words of a normalised headline key."""
+    return {w for w in key.removeprefix("h:").split() if len(w) > 2 and w not in STOPWORDS}
+
+
+def is_similar(toks, others):
+    """True if the headline shares most of its words with any earlier one (Jaccard overlap)."""
+    if len(toks) < 4:
+        return False
+    return any(
+        len(o) >= 4 and len(toks & o) / len(toks | o) >= SIMILARITY for o in others
+    )
+
+
 def send(token, chat_id, text):
     data = urllib.parse.urlencode(
         {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
@@ -208,16 +224,18 @@ def main():
             remember([it["guid"], headline_key(it["title"], it["source"])])
         items = [it for it in items if it not in old]
 
+    seen_tokens = [tokens(k) for k in seen if k.startswith("h:")]
     pending = []
-    batch = set()
+    batch = []
     for it in reversed(items):  # feed is newest first; send oldest first
         keys = [it["guid"], headline_key(it["title"], it["source"])]
         if any(k in seen_set for k in keys):
             continue
-        if keys[1] in batch:  # syndicated duplicate within this run
+        toks = tokens(keys[1])
+        if is_similar(toks, seen_tokens + batch):  # same story already sent or queued
             remember(keys)
             continue
-        batch.add(keys[1])
+        batch.append(toks)
         pending.append((it, keys))
 
     sent = 0
