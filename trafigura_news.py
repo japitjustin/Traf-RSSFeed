@@ -1,8 +1,8 @@
-"""Poll Google News RSS for Trafigura and push new headlines to Telegram.
+"""Check two sources for Trafigura news and push new headlines to Telegram.
 
-Standard library only. State lives in seen.json (committed back by the workflow).
+Sources: the Google News RSS search (news.google.com) and the press release page on
+trafigura.com. Standard library only. State lives in seen.json (committed back by the workflow).
 Env vars required: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-Optional: ALERT_FEED_URLS (Google Alerts RSS URLs, separated by commas or whitespace)
 """
 import html
 import json
@@ -38,7 +38,6 @@ SITES = [
     "lloydslist.com",
     "trafigura.com",
 ]
-NEWS_FEED_ENABLED = False  # Google News search; the [News] feed is skipped when False
 PRESS_FEED_ENABLED = True  # Trafigura's own press release page
 PRESS_URL = "https://www.trafigura.com/news-and-insights/press-releases/"
 SIMILARITY = 0.6  # word overlap (0-1) above which two headlines count as the same story
@@ -73,6 +72,7 @@ def is_relevant(title):
 
 
 def fetch_news_items():
+    """One request to news.google.com/rss/search with all keywords and sites in a single query."""
     root = ET.fromstring(http(feed_url()))
     items = []
     for it in root.iter("item"):
@@ -81,31 +81,6 @@ def fetch_news_items():
         guid = (it.findtext("guid") or link).strip()
         src = it.find("source")
         source = src.text.strip() if src is not None and src.text else ""
-        if title and link and is_relevant(title):
-            items.append({"title": title, "link": link, "guid": guid, "source": source})
-    return items
-
-
-ATOM = "{http://www.w3.org/2005/Atom}"
-
-
-def unwrap_alert_link(href):
-    """Google Alerts wraps links as google.com/url?...&url=<real>; return the real URL."""
-    qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-    return qs["url"][0] if qs.get("url") else href
-
-
-def fetch_alert_items(feed):
-    root = ET.fromstring(http(feed))
-    items = []
-    for entry in root.iter(ATOM + "entry"):
-        raw_title = entry.findtext(ATOM + "title") or ""
-        title = html.unescape(re.sub(r"<[^>]+>", "", raw_title)).strip()
-        link_el = entry.find(ATOM + "link")
-        href = link_el.get("href", "") if link_el is not None else ""
-        link = unwrap_alert_link(html.unescape(href))
-        guid = (entry.findtext(ATOM + "id") or link).strip()
-        source = urllib.parse.urlparse(link).netloc.removeprefix("www.")
         if title and link and is_relevant(title):
             items.append({"title": title, "link": link, "guid": guid, "source": source})
     return items
@@ -138,27 +113,19 @@ def fetch_press_items():
 
 
 def fetch_items():
-    """Trafigura press page, Google Alerts feeds in ALERT_FEED_URLS (secret), optional Google News."""
-    items, failures, attempts = [], 0, 0
-    jobs = []
+    """Google News search plus the trafigura.com press page."""
+    items, failures = [], 0
+    jobs = [("Google News", fetch_news_items)]
     if PRESS_FEED_ENABLED:
         jobs.append(("Press", fetch_press_items))
-    if NEWS_FEED_ENABLED:
-        jobs.append(("News", fetch_news_items))
-    feeds = [f for f in re.split(r"[\s,]+", os.environ.get("ALERT_FEED_URLS", "").strip()) if f]
-    for n, feed in enumerate(feeds, 1):
-        jobs.append((f"Alert {n}", lambda f=feed: fetch_alert_items(f)))
     for name, fn in jobs:
-        attempts += 1
         try:
             items += fn()
-        except Exception as exc:  # one bad feed must not block the others
+        except Exception as exc:  # one bad source must not block the other
             failures += 1
-            print(f"{name} feed failed: {type(exc).__name__}: {exc}", file=sys.stderr)
-    if not attempts:
-        sys.exit("No feeds enabled")
-    if failures == attempts:
-        sys.exit("All feeds failed")
+            print(f"{name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+    if failures == len(jobs):
+        sys.exit("All sources failed")
     return items
 
 

@@ -2,46 +2,50 @@
 
 Sends new news headlines about Trafigura to a Telegram chat. It runs on GitHub Actions every 30 minutes and uses only the Python standard library.
 
+## Where the news comes from
+
+The script reads exactly two sources on every run. Nothing else is queried.
+
+| Source | What the script does | Switch |
+|---|---|---|
+| Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last 2 days. It is one combined search, not one search per keyword. | Always on |
+| trafigura.com press releases | Reads the press release list at `PRESS_URL` and picks out the release links. | `PRESS_FEED_ENABLED` |
+
+Each Telegram message is a linked headline, with the outlet name added when the headline does not already contain it.
+
+If one source fails, the run logs `<source> failed: ...` and carries on with the other. If both fail, the run exits with an error.
+
 ## How it works
 
-1. `trafigura_news.py` reads the Google Alerts feeds you supply in `ALERT_FEED_URLS`, and scrapes the press release list on trafigura.com.
-2. Optionally, it also queries the Google News RSS search for `"Trafigura"` or `"TFG Marine"` on a fixed list of sites, limited to the last 2 days. This is switched off by default (`NEWS_FEED_ENABLED = False`).
-3. Items not seen before are sent to Telegram as a linked headline, oldest first, up to 10 per run.
-4. Seen items are recorded in `seen.json`, which the workflow commits back to the repo.
+1. Fetch both sources.
+2. Drop Google News results whose headline contains none of the `KEYWORDS` (see below).
+3. Drop headlines that match a story already sent or queued (see below).
+4. Send what is left to Telegram, oldest first, up to 10 per run.
+5. Record what was seen in `seen.json`, which the workflow commits back to the repo.
 
 On the first run (no `seen.json`) the script records the current items without sending them, then posts a single "tracker live" message.
 
-Alert and News results are kept only if a `KEYWORDS` term appears in the headline. Google matches the whole page, so without this check an article is returned when a "related stories" or "more from author" link mentions Trafigura. The cost is that a story naming Trafigura only in its body text is dropped. Press releases from trafigura.com are not filtered.
+### Headline must contain a keyword
 
-Copies of one story are collapsed by headline: a headline is skipped if it shares at least 60% of its words (`SIMILARITY`) with one already sent or queued, so rewritten headlines on other outlets are caught too. Headlines with fewer than 4 significant words are only matched exactly. Lower `SIMILARITY` to catch more duplicates, at the risk of hiding distinct stories.
+Google matches the whole page, so an article is returned when a "related stories" or "more from author" link mentions Trafigura. To avoid that, a Google News result is kept only if a `KEYWORDS` term appears in its headline. The cost is that a story naming Trafigura only in its body text is dropped. Press releases from trafigura.com are not filtered.
 
-### Checking what was skipped
+### Duplicates
+
+Copies of one story are collapsed by headline. A headline is skipped if it shares at least 60% of its words (`SIMILARITY`) with one already sent or queued, so rewritten headlines on other outlets are caught too. Headlines with fewer than 4 significant words are only matched exactly. Lower `SIMILARITY` to catch more duplicates, at the risk of hiding distinct stories.
+
+#### Checking what was skipped
 
 Every skipped duplicate is printed in the workflow log. Open the repo's Actions tab, pick a "Trafigura news" run, and expand the "Check feed and notify" step. Each skip looks like this:
 
 ```
-Skipped duplicate: 'Trafigura wins copper smelter deal in Peru, sources say' (reuters.com) ~ 'trafigura wins 500m copper smelter deal in peru' [0.67]
+Skipped duplicate: 'Trafigura wins copper smelter deal in Peru, sources say' (Reuters) ~ 'trafigura wins 500m copper smelter deal in peru' [0.67]
 ```
 
-That is the skipped headline and its source, then the earlier headline it matched (lower case, punctuation removed) and the word overlap score. A score just above `SIMILARITY` is the case to check for a wrongly merged story. Skips are not shown for stories already sent in an earlier run by exact link or exact headline, only for the fuzzy matches. Skips before this logging was added are not recorded anywhere.
+That is the skipped headline and its source, then the earlier headline it matched (lower case, punctuation removed) and the word overlap score. A score just above `SIMILARITY` is the case to check for a wrongly merged story. Skips are not shown for stories already sent in an earlier run by exact link or exact headline, only for the fuzzy matches.
 
-## Trafigura press releases
+## Google News search
 
-Trafigura has no RSS feed that I could find, so the script reads the press release list at `PRESS_URL` and picks out links of the form `/press-releases/<year>/<slug>/`. Titles come from the link text, or from the URL slug when the link text is short. The first time the script sees this source, it records the existing releases without sending them. Turn it off with `PRESS_FEED_ENABLED = False`.
-
-This is a scrape, so it breaks if the site changes its layout or loads the list with JavaScript. In that case the run logs `Press feed failed: no press release links found` and the other feeds carry on.
-
-## Suggested Google Alerts
-
-Each alert needs its own RSS feed URL, added to `ALERT_FEED_URLS`. In Google Alerts, set "Deliver to" to RSS feed, "How many" to All results, and "Sources" to Automatic.
-
-- Entities: `"Trafigura"`, `"Trafigura Group"`, `"TFG Marine"`, `"Impala Terminals"`, `"Nyrstar"`, `"Puma Energy"`, `"Volare Shipping"`
-- Legal and regulatory: `Trafigura lawsuit`, `Trafigura sanctions`, `Trafigura fine OR penalty OR investigation`, `Trafigura court`
-- People: the names of senior executives you want to follow
-
-## Sites scanned by the Google News search
-
-Only used when `NEWS_FEED_ENABLED` is `True`. Edit `SITES` in `trafigura_news.py` to change them.
+`KEYWORDS` are the company and entity names searched, and `LEGAL_TERMS` are added as `Trafigura (lawsuit OR sanctions OR ...)`. The search is limited to these sites, which you can change in `SITES`:
 
 - reuters.com
 - ft.com
@@ -55,18 +59,23 @@ Only used when `NEWS_FEED_ENABLED` is `True`. Edit `SITES` in `trafigura_news.py
 - lloydslist.com
 - trafigura.com
 
-Coverage depends on what Google News has indexed for each site.
+Coverage depends on what Google News has indexed for each site. The 2-day window is the `when:2d` term in `feed_url()`.
+
+## Trafigura press releases
+
+Trafigura has no RSS feed that I could find, so the script reads the press release list at `PRESS_URL` and picks out links of the form `/press-releases/<year>/<slug>/`. Titles come from the link text, or from the URL slug when the link text is short. The first time the script sees this source, it records the existing releases without sending them.
+
+This is a scrape, so it breaks if the site changes its layout or loads the list with JavaScript. In that case the run logs `Press failed: RuntimeError: no press release links found` and Google News carries on.
 
 ## Setup
 
 1. Create a Telegram bot with BotFather and note its token. Get the chat ID of the chat that should receive messages.
 2. In the repo, go to Settings > Secrets and variables > Actions and add:
 
-| Secret | Required | Purpose |
-|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | Yes | Bot token |
-| `TELEGRAM_CHAT_ID` | Yes | Destination chat |
-| `ALERT_FEED_URLS` | No | Google Alerts RSS URLs, separated by commas or whitespace |
+| Secret | Purpose |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Bot token |
+| `TELEGRAM_CHAT_ID` | Destination chat |
 
 3. Enable Actions. The workflow in `.github/workflows/trafigura-news.yml` runs on a 30-minute schedule and can also be started manually with "Run workflow".
 
@@ -84,19 +93,16 @@ This reads and updates `seen.json` in the current directory.
 
 Constants at the top of `trafigura_news.py`:
 
+- `KEYWORDS`: entity names searched on Google News, and the terms a headline must contain.
+- `LEGAL_TERMS`: legal and regulatory words added to the Google News search.
+- `SITES`: domains the Google News search is limited to.
 - `PRESS_FEED_ENABLED`: turns the trafigura.com press release scrape on or off (on).
-- `NEWS_FEED_ENABLED`: turns the Google News search on or off (off).
 - `PRESS_URL`: the press release list page.
-- `KEYWORDS` and `LEGAL_TERMS`: the terms in the Google News search. They have no effect while `NEWS_FEED_ENABLED` is `False`, and the alert feeds are not filtered by them.
-- `KEYWORDS`: search terms.
-- `SITES`: domains to search.
+- `SIMILARITY`: word overlap above which two headlines count as the same story (0.6).
 - `MAX_SEND`: maximum messages per run (10).
 - `MAX_SEEN`: number of dedupe keys kept in `seen.json` (600).
-
-The 2-day window is the `when:2d` term in `feed_url()`.
 
 ## Behaviour to know
 
 - If a Telegram send fails, the script stops for that run and retries the remaining items next run.
-- If no feed is enabled, or every feed fails, the run exits with an error. A single failing feed is logged and skipped.
 - The workflow pushes a commit to `main` whenever `seen.json` changes, so expect frequent "Update seen items" commits.
