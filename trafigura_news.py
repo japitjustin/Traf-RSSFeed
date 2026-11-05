@@ -114,8 +114,8 @@ def fetch_press_items():
 
 
 def fetch_gdelt_items():
-    """One request to the GDELT DOC 2.0 API: all keywords OR'd, last 2 days, newest first."""
-    query = "(" + " OR ".join(f'"{k}"' for k in KEYWORDS) + ")"
+    """One request to the GDELT DOC 2.0 API: all keywords OR'd, English only, last 2 days, newest first."""
+    query = "(" + " OR ".join(f'"{k}"' for k in KEYWORDS) + ") sourcelang:english"
     params = urllib.parse.urlencode(
         {"query": query, "mode": "ArtList", "format": "json", "timespan": "2d",
          "maxrecords": "75", "sort": "datedesc"}
@@ -129,6 +129,8 @@ def fetch_gdelt_items():
         raise RuntimeError(f"unexpected reply: {body.strip()[:120]!r}") from None
     items = []
     for a in articles:
+        if a.get("language") and a["language"].lower() != "english":
+            continue  # belt and braces: the query already asks for English only
         title = html.unescape(a.get("title") or "").strip()
         link = (a.get("url") or "").strip()
         source = (a.get("domain") or "").removeprefix("www.")

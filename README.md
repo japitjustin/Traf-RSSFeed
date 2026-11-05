@@ -9,7 +9,7 @@ The script reads exactly three sources on every run. Nothing else is queried.
 | Source | What the script does | Switch |
 |---|---|---|
 | Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last 2 days. It is one combined search, not one search per keyword. | Always on |
-| GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 2 days, newest first, up to 75 articles. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
+| GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 2 days, newest first, up to 75 articles. English only. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
 | trafigura.com press releases | Reads the press release list at `PRESS_URL` and picks out the release links. | `PRESS_FEED_ENABLED` |
 
 Each Telegram message is a linked headline, with the outlet name added when the headline does not already contain it.
@@ -64,7 +64,7 @@ Coverage depends on what Google News has indexed for each site. The 2-day window
 
 ## GDELT
 
-GDELT is a free news index with no key. The script asks for articles matching any `KEYWORDS` term. If GDELT returns an error message instead of results, the run logs `GDELT failed: RuntimeError: unexpected reply: ...` and the other sources carry on. GDELT's own page titles are used as headlines, in whatever language the article is in. A non-English headline is kept only if it contains one of the keywords.
+GDELT is a free news index with no key. The script asks for articles matching any `KEYWORDS` term. If GDELT returns an error message instead of results, the run logs `GDELT failed: RuntimeError: unexpected reply: ...` and the other sources carry on. The query asks for English-language articles only (`sourcelang:english`), and any article GDELT labels as another language is dropped as well. Google News is asked for the English edition (`hl=en-SG`, `ceid=SG:en`) but its feed has no per-article language label, so it is not filtered further.
 
 ## Trafigura press releases
 
