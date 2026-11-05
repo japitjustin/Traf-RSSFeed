@@ -175,13 +175,16 @@ def tokens(key):
     return {w for w in key.removeprefix("h:").split() if len(w) > 2 and w not in STOPWORDS}
 
 
-def is_similar(toks, others):
-    """True if the headline shares most of its words with any earlier one (Jaccard overlap)."""
+def find_similar(toks, pool):
+    """Return (key, score) of the first earlier headline sharing most words with toks, else None."""
     if len(toks) < 4:
-        return False
-    return any(
-        len(o) >= 4 and len(toks & o) / len(toks | o) >= SIMILARITY for o in others
-    )
+        return None
+    for key, o in pool:
+        if len(o) >= 4:
+            score = len(toks & o) / len(toks | o)
+            if score >= SIMILARITY:
+                return key, score
+    return None
 
 
 def send(token, chat_id, text):
@@ -224,7 +227,7 @@ def main():
             remember([it["guid"], headline_key(it["title"], it["source"])])
         items = [it for it in items if it not in old]
 
-    seen_tokens = [tokens(k) for k in seen if k.startswith("h:")]
+    seen_tokens = [(k, tokens(k)) for k in seen if k.startswith("h:")]
     pending = []
     batch = []
     for it in reversed(items):  # feed is newest first; send oldest first
@@ -232,10 +235,12 @@ def main():
         if any(k in seen_set for k in keys):
             continue
         toks = tokens(keys[1])
-        if is_similar(toks, seen_tokens + batch):  # same story already sent or queued
+        match = find_similar(toks, seen_tokens + batch)
+        if match:  # same story already sent or queued
+            print(f"Skipped duplicate: {it['title']!r} ({it['source']}) ~ {match[0][2:]!r} [{match[1]:.2f}]")
             remember(keys)
             continue
-        batch.append(toks)
+        batch.append((keys[1], toks))
         pending.append((it, keys))
 
     sent = 0

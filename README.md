@@ -15,6 +15,16 @@ Alert and News results are kept only if a `KEYWORDS` term appears in the headlin
 
 Copies of one story are collapsed by headline: a headline is skipped if it shares at least 60% of its words (`SIMILARITY`) with one already sent or queued, so rewritten headlines on other outlets are caught too. Headlines with fewer than 4 significant words are only matched exactly. Lower `SIMILARITY` to catch more duplicates, at the risk of hiding distinct stories.
 
+### Checking what was skipped
+
+Every skipped duplicate is printed in the workflow log. Open the repo's Actions tab, pick a "Trafigura news" run, and expand the "Check feed and notify" step. Each skip looks like this:
+
+```
+Skipped duplicate: 'Trafigura wins copper smelter deal in Peru, sources say' (reuters.com) ~ 'trafigura wins 500m copper smelter deal in peru' [0.67]
+```
+
+That is the skipped headline and its source, then the earlier headline it matched (lower case, punctuation removed) and the word overlap score. A score just above `SIMILARITY` is the case to check for a wrongly merged story. Skips are not shown for stories already sent in an earlier run by exact link or exact headline, only for the fuzzy matches. Skips before this logging was added are not recorded anywhere.
+
 ## Trafigura press releases
 
 Trafigura has no RSS feed that I could find, so the script reads the press release list at `PRESS_URL` and picks out links of the form `/press-releases/<year>/<slug>/`. Titles come from the link text, or from the URL slug when the link text is short. The first time the script sees this source, it records the existing releases without sending them. Turn it off with `PRESS_FEED_ENABLED = False`.
