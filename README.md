@@ -4,30 +4,31 @@ Sends new news headlines about Trafigura to a Telegram chat. It runs on GitHub A
 
 ## Where the news comes from
 
-The script reads exactly two sources on every run. Nothing else is queried.
+The script reads exactly three sources on every run. Nothing else is queried.
 
 | Source | What the script does | Switch |
 |---|---|---|
 | Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last 2 days. It is one combined search, not one search per keyword. | Always on |
+| GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 2 days, newest first, up to 75 articles. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
 | trafigura.com press releases | Reads the press release list at `PRESS_URL` and picks out the release links. | `PRESS_FEED_ENABLED` |
 
 Each Telegram message is a linked headline, with the outlet name added when the headline does not already contain it.
 
-If one source fails, the run logs `<source> failed: ...` and carries on with the other. If both fail, the run exits with an error.
+If a source fails, the run logs `<source> failed: ...` and carries on with the others. If all of them fail, the run exits with an error.
 
 ## How it works
 
-1. Fetch both sources.
-2. Drop Google News results whose headline contains none of the `KEYWORDS` (see below).
+1. Fetch the sources.
+2. Drop Google News and GDELT results whose headline contains none of the `KEYWORDS` (see below).
 3. Drop headlines that match a story already sent or queued (see below).
 4. Send what is left to Telegram, oldest first, up to 10 per run.
 5. Record what was seen in `seen.json`, which the workflow commits back to the repo.
 
-On the first run (no `seen.json`) the script records the current items without sending them, then posts a single "tracker live" message.
+On the first run (no `seen.json`) the script records the current items without sending them, then posts a single "tracker live" message. The same quiet start applies the first time GDELT or the press page is seen: their existing items are recorded without being sent.
 
 ### Headline must contain a keyword
 
-Google matches the whole page, so an article is returned when a "related stories" or "more from author" link mentions Trafigura. To avoid that, a Google News result is kept only if a `KEYWORDS` term appears in its headline. The cost is that a story naming Trafigura only in its body text is dropped. Press releases from trafigura.com are not filtered.
+Google matches the whole page, so an article is returned when a "related stories" or "more from author" link mentions Trafigura, and GDELT matches article text too. To avoid that, a Google News or GDELT result is kept only if a `KEYWORDS` term appears in its headline. The cost is that a story naming Trafigura only in its body text is dropped. Press releases from trafigura.com are not filtered.
 
 ### Duplicates
 
@@ -60,6 +61,10 @@ That is the skipped headline and its source, then the earlier headline it matche
 - trafigura.com
 
 Coverage depends on what Google News has indexed for each site. The 2-day window is the `when:2d` term in `feed_url()`.
+
+## GDELT
+
+GDELT is a free news index with no key. The script asks for articles matching any `KEYWORDS` term. If GDELT returns an error message instead of results, the run logs `GDELT failed: RuntimeError: unexpected reply: ...` and the other sources carry on. GDELT's own page titles are used as headlines, in whatever language the article is in. A non-English headline is kept only if it contains one of the keywords.
 
 ## Trafigura press releases
 
@@ -95,7 +100,8 @@ Constants at the top of `trafigura_news.py`:
 
 - `KEYWORDS`: entity names searched on Google News, and the terms a headline must contain.
 - `LEGAL_TERMS`: legal and regulatory words added to the Google News search.
-- `SITES`: domains the Google News search is limited to.
+- `SITES`: domains the Google News search is limited to. GDELT is not limited by it.
+- `GDELT_FEED_ENABLED`: turns the GDELT search on or off (on).
 - `PRESS_FEED_ENABLED`: turns the trafigura.com press release scrape on or off (on).
 - `PRESS_URL`: the press release list page.
 - `SIMILARITY`: word overlap above which two headlines count as the same story (0.6).

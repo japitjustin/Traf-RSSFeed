@@ -1,7 +1,7 @@
-"""Check two sources for Trafigura news and push new headlines to Telegram.
+"""Check three sources for Trafigura news and push new headlines to Telegram.
 
-Sources: the Google News RSS search (news.google.com) and the press release page on
-trafigura.com. Standard library only. State lives in seen.json (committed back by the workflow).
+Sources: the Google News RSS search (news.google.com), the GDELT DOC API
+(api.gdeltproject.org) and the press release page on trafigura.com. Standard library only. State lives in seen.json (committed back by the workflow).
 Env vars required: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 """
 import html
@@ -39,6 +39,7 @@ SITES = [
     "trafigura.com",
 ]
 PRESS_FEED_ENABLED = True  # Trafigura's own press release page
+GDELT_FEED_ENABLED = True  # GDELT DOC API keyword search
 PRESS_URL = "https://www.trafigura.com/news-and-insights/press-releases/"
 SIMILARITY = 0.6  # word overlap (0-1) above which two headlines count as the same story
 STOPWORDS = {"the", "and", "for", "with", "from", "that", "this", "has", "are", "its"}
@@ -112,10 +113,36 @@ def fetch_press_items():
     ]
 
 
+def fetch_gdelt_items():
+    """One request to the GDELT DOC 2.0 API: all keywords OR'd, last 2 days, newest first."""
+    query = "(" + " OR ".join(f'"{k}"' for k in KEYWORDS) + ")"
+    params = urllib.parse.urlencode(
+        {"query": query, "mode": "ArtList", "format": "json", "timespan": "2d",
+         "maxrecords": "75", "sort": "datedesc"}
+    )
+    body = http("https://api.gdeltproject.org/api/v2/doc/doc?" + params).decode("utf-8", "replace")
+    if not body.strip():
+        return []  # GDELT answers an empty body when nothing matches
+    try:
+        articles = json.loads(body).get("articles", [])
+    except ValueError:
+        raise RuntimeError(f"unexpected reply: {body.strip()[:120]!r}") from None
+    items = []
+    for a in articles:
+        title = html.unescape(a.get("title") or "").strip()
+        link = (a.get("url") or "").strip()
+        source = (a.get("domain") or "").removeprefix("www.")
+        if title and link and is_relevant(title):
+            items.append({"title": title, "link": link, "guid": "gd:" + link, "source": source})
+    return items
+
+
 def fetch_items():
-    """Google News search plus the trafigura.com press page."""
+    """Google News search, GDELT search and the trafigura.com press page."""
     items, failures = [], 0
     jobs = [("Google News", fetch_news_items)]
+    if GDELT_FEED_ENABLED:
+        jobs.append(("GDELT", fetch_gdelt_items))
     if PRESS_FEED_ENABLED:
         jobs.append(("Press", fetch_press_items))
     for name, fn in jobs:
@@ -187,12 +214,13 @@ def main():
         print(f"Seeded {len(items)} items")
         return
 
-    # First time the press page is seen: record its existing releases without sending.
-    if not any(k.startswith("tf:") for k in seen_set):
-        old = [it for it in items if it["guid"].startswith("tf:")]
-        for it in old:
-            remember([it["guid"], headline_key(it["title"], it["source"])])
-        items = [it for it in items if it not in old]
+    # First time a source is seen (guid prefix): record its existing items without sending.
+    for prefix in ("tf:", "gd:"):
+        if not any(k.startswith(prefix) for k in seen_set):
+            old = [it for it in items if it["guid"].startswith(prefix)]
+            for it in old:
+                remember([it["guid"], headline_key(it["title"], it["source"])])
+            items = [it for it in items if it not in old]
 
     seen_tokens = [(k, tokens(k)) for k in seen if k.startswith("h:")]
     pending = []
