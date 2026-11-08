@@ -13,6 +13,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 KEYWORDS = [
@@ -46,6 +48,7 @@ STOPWORDS = {"the", "and", "for", "with", "from", "that", "this", "has", "are", 
 SEEN_FILE = Path("seen.json")
 MAX_SEEN = 600   # keys kept (two per article)
 MAX_SEND = 10    # cap per run so a backlog cannot flood the chat
+MAX_AGE_HOURS = 24  # Google News and GDELT items older than this are ignored
 
 
 def feed_url():
@@ -53,7 +56,7 @@ def feed_url():
     legal = " OR ".join(LEGAL_TERMS)
     terms = " OR ".join(f'"{k}"' for k in KEYWORDS) + f" OR (Trafigura ({legal}))"
     params = urllib.parse.urlencode(
-        {"q": f"({terms}) ({sites}) when:2d", "hl": "en-SG", "gl": "SG", "ceid": "SG:en"}
+        {"q": f"({terms}) ({sites}) when:{max(1, -(-MAX_AGE_HOURS // 24))}d", "hl": "en-SG", "gl": "SG", "ceid": "SG:en"}
     )
     return "https://news.google.com/rss/search?" + params
 
@@ -64,6 +67,25 @@ def http(url, data=None):
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return resp.read()
+
+
+def too_old(when):
+    """True if a timezone-aware datetime is older than MAX_AGE_HOURS. Unknown dates pass."""
+    return when is not None and when < datetime.now(timezone.utc) - timedelta(hours=MAX_AGE_HOURS)
+
+
+URL_DATE = re.compile(r"/(20\d{2})[/-](\d{1,2})[/-](\d{1,2})(?:/|-|$)")
+
+
+def url_date(link):
+    """Publication date written into an article URL (/2024/05/12/...), or None."""
+    m = URL_DATE.search(link)
+    if not m:
+        return None
+    try:
+        return datetime(int(m[1]), int(m[2]), int(m[3]), 23, 59, tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def is_relevant(title):
@@ -82,6 +104,12 @@ def fetch_news_items():
         guid = (it.findtext("guid") or link).strip()
         src = it.find("source")
         source = src.text.strip() if src is not None and src.text else ""
+        try:
+            published = parsedate_to_datetime(it.findtext("pubDate") or "")
+        except (TypeError, ValueError):
+            published = None
+        if published and too_old(published):
+            continue
         if title and link and is_relevant(title):
             items.append({"title": title, "link": link, "guid": guid, "source": source})
     return items
@@ -97,7 +125,11 @@ def fetch_press_items():
     """Scrape press release links from trafigura.com (no RSS feed is known)."""
     page = http(PRESS_URL).decode("utf-8", "replace")
     found = {}
+    this_year = datetime.now(timezone.utc).year
     for href, slug, inner in PRESS_LINK.findall(page):
+        year = int(re.search(r"/press-releases/(\d{4})/", href)[1])
+        if year < this_year - 1:
+            continue
         link = urllib.parse.urljoin(PRESS_URL, href)
         text = html.unescape(re.sub(r"<[^>]+>", " ", inner))
         text = re.sub(r"\s+", " ", text).strip()
@@ -117,7 +149,7 @@ def fetch_gdelt_items():
     """One request to the GDELT DOC 2.0 API: all keywords OR'd, English only, last 2 days, newest first."""
     query = "(" + " OR ".join(f'"{k}"' for k in KEYWORDS) + ") sourcelang:english"
     params = urllib.parse.urlencode(
-        {"query": query, "mode": "ArtList", "format": "json", "timespan": "2d",
+        {"query": query, "mode": "ArtList", "format": "json", "timespan": f"{MAX_AGE_HOURS}h",
          "maxrecords": "75", "sort": "datedesc"}
     )
     body = http("https://api.gdeltproject.org/api/v2/doc/doc?" + params).decode("utf-8", "replace")
@@ -134,6 +166,12 @@ def fetch_gdelt_items():
         title = html.unescape(a.get("title") or "").strip()
         link = (a.get("url") or "").strip()
         source = (a.get("domain") or "").removeprefix("www.")
+        try:  # seendate is when GDELT crawled it, so also check any date inside the URL
+            seen_at = datetime.strptime(a.get("seendate", ""), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            seen_at = None
+        if too_old(seen_at) or too_old(url_date(link)):
+            continue
         if title and link and is_relevant(title):
             items.append({"title": title, "link": link, "guid": "gd:" + link, "source": source})
     return items
@@ -164,6 +202,12 @@ def headline_key(title, source):
     if source and t.endswith(" - " + source):
         t = t[: -(len(source) + 3)]
     return "h:" + re.sub(r"[^a-z0-9]+", " ", t.lower()).strip()
+
+
+def save_seen(seen):
+    """Keep the newest MAX_SEEN keys, plus every press release key so old releases never look new."""
+    pinned = [k for k in seen[:-MAX_SEEN] if k.startswith("tf:")]
+    SEEN_FILE.write_text(json.dumps(pinned + seen[-MAX_SEEN:]))
 
 
 def tokens(key):
@@ -211,7 +255,7 @@ def main():
     if first_run:
         for it in items:
             remember([it["guid"], headline_key(it["title"], it["source"])])
-        SEEN_FILE.write_text(json.dumps(seen[-MAX_SEEN:]))
+        save_seen(seen)
         send(token, chat_id, f"Trafigura tracker live. Seeded {len(items)} existing items.")
         print(f"Seeded {len(items)} items")
         return
@@ -255,7 +299,7 @@ def main():
         remember(keys)
         sent += 1
 
-    SEEN_FILE.write_text(json.dumps(seen[-MAX_SEEN:]))
+    save_seen(seen)
     print(f"Fetched {len(items)}, new {len(pending)}, sent {sent}")
 
 

@@ -8,8 +8,8 @@ The script reads exactly three sources on every run. Nothing else is queried.
 
 | Source | What the script does | Switch |
 |---|---|---|
-| Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last 2 days. It is one combined search, not one search per keyword. | Always on |
-| GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 2 days, newest first, up to 75 articles. English only. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
+| Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last day. It is one combined search, not one search per keyword. | Always on |
+| GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 24 hours, newest first, up to 75 articles. English only. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
 | trafigura.com press releases | Reads the press release list at `PRESS_URL` and picks out the release links. | `PRESS_FEED_ENABLED` |
 
 Each Telegram message is a linked headline, with the outlet name added when the headline does not already contain it.
@@ -19,12 +19,23 @@ If a source fails, the run logs `<source> failed: ...` and carries on with the o
 ## How it works
 
 1. Fetch the sources.
-2. Drop Google News and GDELT results whose headline contains none of the `KEYWORDS` (see below).
-3. Drop headlines that match a story already sent or queued (see below).
-4. Send what is left to Telegram, oldest first, up to 10 per run.
-5. Record what was seen in `seen.json`, which the workflow commits back to the repo.
+2. Drop Google News and GDELT items older than `MAX_AGE_HOURS` (see below).
+3. Drop Google News and GDELT results whose headline contains none of the `KEYWORDS` (see below).
+4. Drop headlines that match a story already sent or queued (see below).
+5. Send what is left to Telegram, oldest first, up to 10 per run.
+6. Record what was seen in `seen.json`, which the workflow commits back to the repo.
 
 On the first run (no `seen.json`) the script records the current items without sending them, then posts a single "tracker live" message. The same quiet start applies the first time GDELT or the press page is seen: their existing items are recorded without being sent.
+
+### Freshness
+
+Items older than `MAX_AGE_HOURS` (24) are dropped, using the dates each source gives:
+
+- **Google News:** the item's published date.
+- **GDELT:** the date GDELT first saw the article. GDELT also re-crawls old pages, so the script additionally drops any article whose URL contains an old date such as `/2023/05/12/`. An old article with no date in its URL can still get through.
+- **Press page:** the page gives no dates. Only releases from this year and last year are considered, and every press release already seen is kept in `seen.json` permanently, so old releases cannot reappear as new.
+
+An item with no date is kept. Raise `MAX_AGE_HOURS` if runs are sometimes delayed by more than a day.
 
 ### Headline must contain a keyword
 
@@ -60,7 +71,7 @@ That is the skipped headline and its source, then the earlier headline it matche
 - lloydslist.com
 - trafigura.com
 
-Coverage depends on what Google News has indexed for each site. The 2-day window is the `when:2d` term in `feed_url()`.
+Coverage depends on what Google News has indexed for each site. The time window is the `when:` term in `feed_url()`, set from `MAX_AGE_HOURS`.
 
 ## GDELT
 
@@ -105,8 +116,9 @@ Constants at the top of `trafigura_news.py`:
 - `PRESS_FEED_ENABLED`: turns the trafigura.com press release scrape on or off (on).
 - `PRESS_URL`: the press release list page.
 - `SIMILARITY`: word overlap above which two headlines count as the same story (0.6).
+- `MAX_AGE_HOURS`: Google News and GDELT items older than this are ignored (24).
 - `MAX_SEND`: maximum messages per run (10).
-- `MAX_SEEN`: number of dedupe keys kept in `seen.json` (600).
+- `MAX_SEEN`: number of recent dedupe keys kept in `seen.json` (600), not counting press release keys, which are kept permanently.
 
 ## Behaviour to know
 
