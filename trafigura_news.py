@@ -98,7 +98,7 @@ def is_relevant(title):
 def fetch_news_items():
     """One request to news.google.com/rss/search with all keywords and sites in a single query."""
     root = ET.fromstring(http(feed_url()))
-    items, raw, old, off_topic = [], 0, 0, 0
+    items, raw, old, off_topic, dates = [], 0, 0, 0, []
     for it in root.iter("item"):
         raw += 1
         title = (it.findtext("title") or "").strip()
@@ -110,6 +110,8 @@ def fetch_news_items():
             published = parsedate_to_datetime(it.findtext("pubDate") or "")
         except (TypeError, ValueError):
             published = None
+        if published:
+            dates.append(published)
         if published and too_old(published):
             old += 1
             continue
@@ -118,6 +120,8 @@ def fetch_news_items():
             continue
         if title and link:
             items.append({"title": title, "link": link, "guid": guid, "source": source})
+    if dates:
+        print(f"Google News dates: newest {max(dates):%Y-%m-%d %H:%M}, oldest {min(dates):%Y-%m-%d %H:%M} UTC")
     print(f"Google News: {raw} returned, {old} too old, {off_topic} without a keyword in the headline, {len(items)} kept")
     return items
 
