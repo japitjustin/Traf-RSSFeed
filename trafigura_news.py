@@ -27,7 +27,6 @@ KEYWORDS = [
     "Puma Energy",
     "Volare Shipping",
 ]
-LEGAL_TERMS = ["lawsuit", "sanctions", "fine", "penalty", "investigation", "court"]
 SITES = [
     "reuters.com",
     "ft.com",
@@ -54,8 +53,7 @@ MAX_AGE_HOURS = 48  # Google News and GDELT items older than this are ignored
 
 def feed_url():
     sites = " OR ".join(f"site:{s}" for s in SITES)
-    legal = " OR ".join(LEGAL_TERMS)
-    terms = " OR ".join(f'"{k}"' for k in KEYWORDS) + f" OR (Trafigura ({legal}))"
+    terms = " OR ".join(f'"{k}"' for k in KEYWORDS)
     params = urllib.parse.urlencode(
         {"q": f"({terms}) ({sites}) when:{max(1, -(-MAX_AGE_HOURS // 24))}d", "hl": "en-SG", "gl": "SG", "ceid": "SG:en"}
     )
