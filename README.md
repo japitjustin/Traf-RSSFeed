@@ -1,6 +1,6 @@
 # Traf-RSSFeed
 
-Sends new news headlines about Trafigura to a Telegram chat. It runs on GitHub Actions every 30 minutes and uses only the Python standard library.
+Sends new news headlines about Trafigura to a Telegram chat. It runs on GitHub Actions (scheduled every 30 minutes, though GitHub in practice runs it every few hours) and uses only the Python standard library.
 
 ## Where the news comes from
 
@@ -8,9 +8,9 @@ The script reads exactly three sources on every run. Nothing else is queried.
 
 | Source | What the script does | Switch |
 |---|---|---|
-| Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last day. It is one combined search, not one search per keyword. | Always on |
-| GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 24 hours, newest first, up to 75 articles. English only. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
-| trafigura.com press releases | Reads the press release list at `PRESS_URL` and picks out the release links. | `PRESS_FEED_ENABLED` |
+| Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last 2 days. It is one combined search, not one search per keyword. | Always on |
+| GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 48 hours, newest first, up to 75 articles. GDELT often refuses requests from GitHub's shared servers (`429 Too Many Requests`); the script waits 10 seconds and tries once more. English only. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
+| trafigura.com press releases | **Off.** `PRESS_URL` returns 404 Not Found. trafigura.com is still searched through Google News (it is in `SITES`). | `PRESS_FEED_ENABLED` |
 
 Each Telegram message is a linked headline, with the outlet name added when the headline does not already contain it.
 
@@ -29,7 +29,7 @@ On the first run (no `seen.json`) the script records the current items without s
 
 ### Freshness
 
-Items older than `MAX_AGE_HOURS` (24) are dropped, using the dates each source gives:
+Items older than `MAX_AGE_HOURS` (48) are dropped, using the dates each source gives:
 
 - **Google News:** the item's published date.
 - **GDELT:** the date GDELT first saw the article. GDELT also re-crawls old pages, so the script additionally drops any article whose URL contains an old date such as `/2023/05/12/`. An old article with no date in its URL can still get through.
@@ -44,6 +44,18 @@ Google matches the whole page, so an article is returned when a "related stories
 ### Duplicates
 
 Copies of one story are collapsed by headline. A headline is skipped if it shares at least 60% of its words (`SIMILARITY`) with one already sent or queued, so rewritten headlines on other outlets are caught too. Headlines with fewer than 4 significant words are only matched exactly. Lower `SIMILARITY` to catch more duplicates, at the risk of hiding distinct stories.
+
+#### Checking what each source returned
+
+Each run prints a count per source in the "Check feed and notify" step, for example:
+
+```
+Google News: 31 returned, 6 too old, 4 without a keyword in the headline, 21 kept
+GDELT failed: HTTPError: HTTP Error 429: Too Many Requests
+Fetched 21, new 2, sent 2
+```
+
+If a source shows `0 returned` run after run, the query is the problem. If most items are "too old" or "without a keyword", the filters are.
 
 #### Checking what was skipped
 
@@ -113,10 +125,10 @@ Constants at the top of `trafigura_news.py`:
 - `LEGAL_TERMS`: legal and regulatory words added to the Google News search.
 - `SITES`: domains the Google News search is limited to. GDELT is not limited by it.
 - `GDELT_FEED_ENABLED`: turns the GDELT search on or off (on).
-- `PRESS_FEED_ENABLED`: turns the trafigura.com press release scrape on or off (on).
+- `PRESS_FEED_ENABLED`: turns the trafigura.com press release scrape on or off (off, because `PRESS_URL` returns 404).
 - `PRESS_URL`: the press release list page.
 - `SIMILARITY`: word overlap above which two headlines count as the same story (0.6).
-- `MAX_AGE_HOURS`: Google News and GDELT items older than this are ignored (24).
+- `MAX_AGE_HOURS`: Google News and GDELT items older than this are ignored (48).
 - `MAX_SEND`: maximum messages per run (10).
 - `MAX_SEEN`: number of recent dedupe keys kept in `seen.json` (600), not counting press release keys, which are kept permanently.
 

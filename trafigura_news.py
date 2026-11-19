@@ -9,6 +9,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -40,7 +41,7 @@ SITES = [
     "lloydslist.com",
     "trafigura.com",
 ]
-PRESS_FEED_ENABLED = True  # Trafigura's own press release page
+PRESS_FEED_ENABLED = False  # off: PRESS_URL returns 404; trafigura.com is still covered via SITES on Google News
 GDELT_FEED_ENABLED = True  # GDELT DOC API keyword search
 PRESS_URL = "https://www.trafigura.com/news-and-insights/press-releases/"
 SIMILARITY = 0.6  # word overlap (0-1) above which two headlines count as the same story
@@ -48,7 +49,7 @@ STOPWORDS = {"the", "and", "for", "with", "from", "that", "this", "has", "are", 
 SEEN_FILE = Path("seen.json")
 MAX_SEEN = 600   # keys kept (two per article)
 MAX_SEND = 10    # cap per run so a backlog cannot flood the chat
-MAX_AGE_HOURS = 24  # Google News and GDELT items older than this are ignored
+MAX_AGE_HOURS = 48  # Google News and GDELT items older than this are ignored
 
 
 def feed_url():
@@ -97,8 +98,9 @@ def is_relevant(title):
 def fetch_news_items():
     """One request to news.google.com/rss/search with all keywords and sites in a single query."""
     root = ET.fromstring(http(feed_url()))
-    items = []
+    items, raw, old, off_topic = [], 0, 0, 0
     for it in root.iter("item"):
+        raw += 1
         title = (it.findtext("title") or "").strip()
         link = (it.findtext("link") or "").strip()
         guid = (it.findtext("guid") or link).strip()
@@ -109,9 +111,14 @@ def fetch_news_items():
         except (TypeError, ValueError):
             published = None
         if published and too_old(published):
+            old += 1
             continue
-        if title and link and is_relevant(title):
+        if not is_relevant(title):
+            off_topic += 1
+            continue
+        if title and link:
             items.append({"title": title, "link": link, "guid": guid, "source": source})
+    print(f"Google News: {raw} returned, {old} too old, {off_topic} without a keyword in the headline, {len(items)} kept")
     return items
 
 
@@ -152,14 +159,22 @@ def fetch_gdelt_items():
         {"query": query, "mode": "ArtList", "format": "json", "timespan": f"{MAX_AGE_HOURS}h",
          "maxrecords": "75", "sort": "datedesc"}
     )
-    body = http("https://api.gdeltproject.org/api/v2/doc/doc?" + params).decode("utf-8", "replace")
+    url = "https://api.gdeltproject.org/api/v2/doc/doc?" + params
+    try:
+        body = http(url)
+    except urllib.error.HTTPError as exc:
+        if exc.code != 429:
+            raise
+        time.sleep(10)  # GDELT allows one request per few seconds per IP; GitHub runners share IPs
+        body = http(url)
+    body = body.decode("utf-8", "replace")
     if not body.strip():
         return []  # GDELT answers an empty body when nothing matches
     try:
         articles = json.loads(body).get("articles", [])
     except ValueError:
         raise RuntimeError(f"unexpected reply: {body.strip()[:120]!r}") from None
-    items = []
+    items, old, off_topic = [], 0, 0
     for a in articles:
         if a.get("language") and a["language"].lower() != "english":
             continue  # belt and braces: the query already asks for English only
@@ -171,9 +186,14 @@ def fetch_gdelt_items():
         except ValueError:
             seen_at = None
         if too_old(seen_at) or too_old(url_date(link)):
+            old += 1
             continue
-        if title and link and is_relevant(title):
+        if not is_relevant(title):
+            off_topic += 1
+            continue
+        if title and link:
             items.append({"title": title, "link": link, "guid": "gd:" + link, "source": source})
+    print(f"GDELT: {len(articles)} returned, {old} too old, {off_topic} without a keyword in the headline, {len(items)} kept")
     return items
 
 
