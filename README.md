@@ -8,7 +8,7 @@ The script reads exactly three sources on every run. Nothing else is queried.
 
 | Source | What the script does | Switch |
 |---|---|---|
-| Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` and `LEGAL_TERMS` with every domain in `SITES`, limited to the last 2 days. It is one combined search, not one search per keyword. | Always on |
+| Google News | One request to `news.google.com/rss/search`. The query combines every term in `KEYWORDS` with every domain in `SITES`, and asks for the last 2 days. Google does not honour that limit and also returns articles years old, so the script's own age check (below) is what keeps results current. It is one combined search, not one search per keyword. | Always on |
 | GDELT | One request to the GDELT DOC 2.0 API (`api.gdeltproject.org`). The query is every term in `KEYWORDS` joined with OR, for the last 48 hours, newest first, up to 75 articles. GDELT often refuses requests from GitHub's shared servers (`429 Too Many Requests`); the script waits 10 seconds and tries once more. English only. It is not limited to `SITES`, so it can find outlets Google News does not. | `GDELT_FEED_ENABLED` |
 | trafigura.com press releases | **Off.** `PRESS_URL` returns 404 Not Found. trafigura.com is still searched through Google News (it is in `SITES`). | `PRESS_FEED_ENABLED` |
 
@@ -69,7 +69,7 @@ That is the skipped headline and its source, then the earlier headline it matche
 
 ## Google News search
 
-`KEYWORDS` are the company and entity names searched, and `LEGAL_TERMS` are added as `Trafigura (lawsuit OR sanctions OR ...)`. The search is limited to these sites, which you can change in `SITES`:
+`KEYWORDS` are the company and entity names searched. Keep the query simple: a nested clause such as `Trafigura (lawsuit OR sanctions)` made Google return only old articles, so nothing new came through. The search is limited to these sites, which you can change in `SITES`:
 
 - reuters.com
 - ft.com
@@ -122,7 +122,6 @@ This reads and updates `seen.json` in the current directory.
 Constants at the top of `trafigura_news.py`:
 
 - `KEYWORDS`: entity names searched on Google News, and the terms a headline must contain.
-- `LEGAL_TERMS`: legal and regulatory words added to the Google News search.
 - `SITES`: domains the Google News search is limited to. GDELT is not limited by it.
 - `GDELT_FEED_ENABLED`: turns the GDELT search on or off (on).
 - `PRESS_FEED_ENABLED`: turns the trafigura.com press release scrape on or off (off, because `PRESS_URL` returns 404).
