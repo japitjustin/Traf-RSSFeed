@@ -27,20 +27,7 @@ KEYWORDS = [
     "Puma Energy",
     "Volare Shipping",
 ]
-SITES = [
-    "reuters.com",
-    "ft.com",
-    "bloomberg.com",
-    "spglobal.com",
-    "argusmedia.com",
-    "mining.com",
-    "straitstimes.com",
-    "shipandbunker.com",
-    "splash247.com",
-    "lloydslist.com",
-    "trafigura.com",
-]
-PRESS_FEED_ENABLED = False  # off: PRESS_URL returns 404; trafigura.com is still covered via SITES on Google News
+PRESS_FEED_ENABLED = False  # off: PRESS_URL returns 404; trafigura.com is still covered by the Google News search
 GDELT_FEED_ENABLED = True  # GDELT DOC API keyword search
 PRESS_URL = "https://www.trafigura.com/news-and-insights/press-releases/"
 SIMILARITY = 0.6  # word overlap (0-1) above which two headlines count as the same story
@@ -52,10 +39,9 @@ MAX_AGE_HOURS = 48  # Google News and GDELT items older than this are ignored
 
 
 def feed_url():
-    sites = " OR ".join(f"site:{s}" for s in SITES)
     terms = " OR ".join(f'"{k}"' for k in KEYWORDS)
     params = urllib.parse.urlencode(
-        {"q": f"({terms}) ({sites}) when:{max(1, -(-MAX_AGE_HOURS // 24))}d", "hl": "en-SG", "gl": "SG", "ceid": "SG:en"}
+        {"q": f"({terms}) when:{max(1, -(-MAX_AGE_HOURS // 24))}d", "hl": "en-SG", "gl": "SG", "ceid": "SG:en"}
     )
     return "https://news.google.com/rss/search?" + params
 
