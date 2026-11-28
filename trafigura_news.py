@@ -26,6 +26,7 @@ KEYWORDS = [
     "Nyrstar",
     "Puma Energy",
     "Volare Shipping",
+    "Greenergy",
 ]
 PRESS_FEED_ENABLED = False  # off: PRESS_URL returns 404; trafigura.com is still covered by the Google News search
 GDELT_FEED_ENABLED = True  # GDELT DOC API keyword search
